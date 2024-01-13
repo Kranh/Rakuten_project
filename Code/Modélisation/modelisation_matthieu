@@ -1,1 +1,106 @@
+# Importation des bibliothèques nécessaires
+import pandas as pd
+import numpy as np
+import re
+from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from imblearn.ensemble import BalancedRandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
 
+# Chargement du fichier après pre-processing
+df = pd.read_csv('/aug23_cds_rakuten/data_pre_process.csv', index_col=0)
+display(df.head())
+
+# Afficher le nombre de lignes et de colonnes de chacun des deux fichiers
+print("Le nombre de lignes et de colonnes de df est de :",df.shape)
+
+from imblearn.under_sampling import RandomUnderSampler
+
+# Affectation de X et y
+X = df['description_complete']
+y = df['prdtypecode']
+
+# Créer une instance de RandomUnderSampler avec une limite de 500
+rus = RandomUnderSampler(sampling_strategy='auto', replacement=False, random_state=42)
+
+# Adapter RandomUnderSampler à X et y
+# Note : RandomUnderSampler s'attend à ce que X soit un DataFrame, donc nous devons le convertir en DataFrame
+X_ru, y_ru = rus.fit_resample(X.to_frame(), y)
+
+# Vérifier la distribution des classes après sous-échantillonnage
+print('Classes échantillon undersampled :', dict(pd.Series(y_ru).value_counts()))
+
+# Après le sous-échantillonnage
+print(X_ru.shape, y_ru.shape)  # Vérifiez si X_ru et y_ru ont le même nombre de lignes
+
+# Convertissez X_ru en DataFrame si nécessaire
+X_ru_df = X_ru.to_frame() if isinstance(X_ru, pd.Series) else X_ru
+
+# Séparation des données en ensembles d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X_ru_df, y_ru, test_size=0.2, random_state=42)
+
+# Vérifiez à nouveau les dimensions
+print(X_train.shape, y_train.shape)  # Ces dimensions doivent correspondre
+
+# Vérification que X_train contient des données textuelles
+is_textual_data = all(isinstance(text, str) for text in X_train.iloc[:, 0])
+print("Les données de X_train sont-elles textuelles ?", is_textual_data)
+
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+# Pipeline simplifié pour le test
+pipeline_test = Pipeline([
+    ('tfidf', TfidfVectorizer()),
+    ('rf', RandomForestClassifier(random_state=42))
+])
+
+# Grille de paramètres réduite
+param_grid_test = {
+    'tfidf__max_features': [2000, 3000, 5000],
+    'rf__n_estimators': [50, 100],
+    'rf__max_features': ['sqrt'],
+}
+
+# GridSearchCV avec la grille réduite
+grid_search_test = GridSearchCV(pipeline_test, param_grid_test, cv=5, scoring='f1_weighted')
+
+# Exécution du GridSearchCV avec la grille réduite
+grid_search_test.fit(X_train.iloc[:, 0], y_train)
+print("Meilleurs Paramètres (Test):", grid_search_test.best_params_)
+print("Meilleure Précision (Test):", grid_search_test.best_score_)
+
+# Utilisation du meilleur modèle trouvé par GridSearchCV pour faire des prédictions
+best_model = grid_search_test.best_estimator_
+y_pred_best = best_model.predict(X_test.iloc[:, 0])
+
+# Calcul de l'accuracy score pour les meilleures prédictions
+accuracy_best = accuracy_score(y_test, y_pred_best)
+print("Accuracy Score (Meilleur Modèle):", accuracy_best)
+
+# Calcul de la matrice de confusion pour les meilleures prédictions
+conf_matrix_best = pd.crosstab(y_test,y_pred_best,rownames=['Classe réelle'], colnames=['Classe prédite'],normalize='index')
+display("Matrice de Confusion (Meilleur Modèle):\n", conf_matrix_best)
+
+# Création de la heatmap
+plt.figure(figsize=(20, 10))  # Ajustez la taille selon vos besoins
+sns.heatmap(conf_matrix_best, annot=True, fmt='.2f', cmap='jet')
+
+# Ajout de titres et d'étiquettes pour la clarté
+plt.title('Matrice de Confusion (Meilleur Modèle)')
+plt.ylabel('Vérité Terrain')
+plt.xlabel('Prédiction du Modèle')
+
+# Affichage du graphe
+plt.show()
